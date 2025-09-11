@@ -59,7 +59,7 @@ jobs:
     - name: Build frontend resources
       run: |
         cd siyuan/app
-        pnpm install
+        pnpm install --no-frozen-lockfile
         pnpm run build:app
         pnpm run build:mobile
         
