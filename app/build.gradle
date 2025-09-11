@@ -4,7 +4,7 @@ plugins {
 
 // 多渠道打包配置已引用的方式传递
 apply from: rootProject.file('flavors.gradle')
-apply from: rootProject.file('signings.gradle')
+// apply from: rootProject.file('signings.gradle') // 签名配置已直接集成到build.gradle中
 apply from: rootProject.file('buildRelease.gradle')
 
 // By appending the version name, build type, and a timestamp to the APK filename,
@@ -32,6 +32,17 @@ android.applicationVariants.configureEach { variant ->
 android {
     namespace 'org.b3log.siyuan'
     compileSdk 36
+
+    // 签名配置
+    signingConfigs {
+        siyuanConfig {
+            // 发布版签名配置
+            storeFile file("../siyuan-release.keystore")
+            storePassword "siyuan123456"
+            keyAlias "siyuan"
+            keyPassword "siyuan123456"
+        }
+    }
 
     buildFeatures {
         buildConfig = true

@@ -89,10 +89,10 @@ jobs:
         cp siyuan/kernel/kernel.aar app/libs/
         cp siyuan/app.zip app/src/main/assets/
         
-    - name: Verify signing keystore
+    - name: Verify build files
       run: |
-        ls -la siyuan-release.keystore
-        echo "Using committed keystore for signing"
+        ls -la siyuan-release.keystore signings.gradle
+        echo "Using committed keystore and signing config"
         
     - name: Make gradlew executable
       run: chmod +x ./gradlew
