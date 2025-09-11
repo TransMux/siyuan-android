@@ -1,0 +1,104 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout siyuan-android repository
+      uses: actions/checkout@v4
+      
+    - name: Checkout siyuan repository
+      uses: actions/checkout@v4
+      with:
+        repository: siyuan-note/siyuan
+        path: siyuan
+        
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install pnpm
+      uses: pnpm/action-setup@v3
+      with:
+        version: 10.13.1
+        
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      
+    - name: Install Android NDK
+      run: |
+        sdkmanager "ndk;25.1.8937393"
+        echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
+        
+    - name: Install gomobile
+      run: |
+        go install golang.org/x/mobile/cmd/gomobile@latest
+        gomobile init
+        
+    - name: Build frontend resources
+      run: |
+        cd siyuan/app
+        pnpm install
+        pnpm run build:app
+        pnpm run build:mobile
+        
+    - name: Prepare app.zip
+      run: |
+        cd siyuan
+        mkdir -p app_resources
+        cp -r appearance app_resources/
+        cp -r app/guide app_resources/
+        cp -r app/stage app_resources/
+        cp -r app/changelogs app_resources/
+        cd app_resources
+        zip -r ../app.zip *
+        
+    - name: Build kernel.aar
+      run: |
+        cd siyuan/kernel
+        export CGO_ENABLED=1
+        export JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8"
+        gomobile bind --tags fts5 -ldflags "-s -w" -v -o kernel.aar -target=android/arm64 -androidapi 26 ./mobile/
+        
+    - name: Prepare Android build
+      run: |
+        mkdir -p app/libs
+        mkdir -p app/src/main/assets
+        cp siyuan/kernel/kernel.aar app/libs/
+        cp siyuan/app.zip app/src/main/assets/
+        
+    - name: Make gradlew executable
+      run: chmod +x ./gradlew
+      
+    - name: Build debug APKs
+      run: |
+        ./gradlew assembleCnDebug assembleOfficialDebug
+        
+    - name: Upload APK artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: siyuan-debug-apks
+        path: |
+          app/build/outputs/apk/cn/debug/*.apk
+          app/build/outputs/apk/official/debug/*.apk
+        retention-days: 1
