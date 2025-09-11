@@ -88,21 +88,27 @@ jobs:
         mkdir -p app/src/main/assets
         cp siyuan/kernel/kernel.aar app/libs/
         cp siyuan/app.zip app/src/main/assets/
-        # Create signings.gradle from template for debug build
-        cp signings.templates.gradle signings.gradle
+        
+    - name: Verify signing keystore
+      run: |
+        ls -la siyuan-release.keystore
+        echo "Using committed keystore for signing"
         
     - name: Make gradlew executable
       run: chmod +x ./gradlew
       
-    - name: Build debug APKs
+    - name: Build APKs
       run: |
-        ./gradlew assembleCnDebug assembleOfficialDebug
+        # Build both debug and release versions
+        ./gradlew assembleCnDebug assembleOfficialDebug assembleCnRelease assembleOfficialRelease
         
     - name: Upload APK artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: siyuan-debug-apks
+        name: siyuan-apks
         path: |
           app/build/outputs/apk/cn/debug/*.apk
           app/build/outputs/apk/official/debug/*.apk
-        retention-days: 1
+          app/build/outputs/apk/cn/release/*.apk
+          app/build/outputs/apk/official/release/*.apk
+        retention-days: 7
