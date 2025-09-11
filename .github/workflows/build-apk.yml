@@ -91,8 +91,8 @@ jobs:
         
     - name: Verify build files
       run: |
-        ls -la siyuan-release.keystore signings.gradle
-        echo "Using committed keystore and signing config"
+        ls -la siyuan-release.keystore
+        echo "Using committed keystore (signing config integrated in build.gradle)"
         
     - name: Make gradlew executable
       run: chmod +x ./gradlew
