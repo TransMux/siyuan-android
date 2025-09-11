@@ -33,6 +33,10 @@ android {
     namespace 'org.b3log.siyuan'
     compileSdk 36
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId "org.b3log.siyuan"
         minSdk 26

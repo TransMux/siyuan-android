@@ -87,6 +87,8 @@ jobs:
         mkdir -p app/src/main/assets
         cp siyuan/kernel/kernel.aar app/libs/
         cp siyuan/app.zip app/src/main/assets/
+        # Create signings.gradle from template for debug build
+        cp signings.templates.gradle signings.gradle
         
     - name: Make gradlew executable
       run: chmod +x ./gradlew
