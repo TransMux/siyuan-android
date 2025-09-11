@@ -1,136 +1,38 @@
-# 思源安卓APK自动构建GitHub Action实施计划
+# 调查手机端无法打开问题的计划
 
-## 项目分析总结
+## 问题描述
+在将 siyuan 仓库从官方仓库 `siyuan-note/siyuan` 改为自己的 fork 仓库 `TransMux/siyuan` 后，手机端应用无法打开。
 
-### 当前项目结构
-- 思源安卓项目：`/root/projects/siyuan-android`
-- 思源内核项目：`/root/projects/siyuan`
-- 依赖关系：安卓项目需要内核编译产生的`kernel.aar`和资源文件`app.zip`
+## 需要调查的关键点
 
-### 构建需求分析
-1. **内核编译**：需要使用gomobile编译Go代码生成`kernel.aar`
-2. **资源准备**：需要准备`appearance`、`guide`、`stage`、`changelogs`资源文件并打包为`app.zip`
-3. **Debug包构建**：只构建debug版本APK，无需签名
-4. **构建产物**：生成debug APK并上传到GitHub Artifacts
+### 1. 分析最近的更改 - Done
+- [x] 查看最近的提交记录，发现关键提交 `a765e8d` 将仓库指向改为 `TransMux/siyuan`
+- [x] 确认更改内容：从 `siyuan-note/siyuan` 改为 `TransMux/siyuan`，并添加了 PAT_TOKEN
+- **结果**: 确认了在提交 a765e8d 中将构建流程指向了 TransMux/siyuan 仓库
 
-## 实施计划项目
+### 2. 检查构建配置文件 - Done
+- [x] 检查 `app/build.gradle` 文件，查看应用配置
+- [x] 检查 Android 清单文件 `AndroidManifest.xml`
+- [x] 检查应用的版本号、包名等关键配置
+- **结果**: 构建配置正常，版本号为 3.3.2，包名为 org.b3log.siyuan，没有发现配置问题
 
-### 阶段一：环境准备和依赖分析
-- [x] 1. 研究思源内核项目的构建需求和依赖 **Done**
-  - 分析了go.mod文件，确认Go 1.24+要求和移动端依赖
-  - 确认mobile/kernel.go为Android绑定入口
-- [x] 2. 分析安卓项目的Gradle配置和构建脚本 **Done**
-  - 了解多渠道配置（cn、googleplay、huawei、official）
-  - 确认debug构建不需要签名配置
-- [x] 3. 确定GitHub Action需要的运行环境和工具 **Done**
-  - Ubuntu-latest、Go 1.24+、Node.js、pnpm、JDK 17、Android SDK/NDK
+### 3. 验证 fork 仓库的完整性 - Done
+- [x] 检查 `TransMux/siyuan` 仓库是否存在
+- [x] 尝试访问该仓库的 API 和网页
+- **结果**: **关键发现** - `TransMux/siyuan` 仓库不存在或不可访问（404错误）
 
-### 阶段二：内核编译工作流设计
-- [x] 4. 设计Go环境配置和gomobile安装流程 **Done**
-  - 配置Go环境和CGO_ENABLED=1
-  - 安装gomobile工具并初始化
-- [x] 5. 编写内核编译命令 **Done**
-  - `gomobile bind --tags fts5 -ldflags "-s -w" -v -o kernel.aar -target=android/arm64 -androidapi 26 ./mobile/`
-- [x] 6. 配置内核编译产物的缓存和传递机制 **Done**
-  - 将kernel.aar复制到app/libs/目录
+### 4. 检查构建流程 - Done
+- [x] 分析构建工作流程配置
+- [x] 检查依赖项和资源文件的生成过程
+- **结果**: 构建流程配置正确，但因为源仓库不存在，无法正常拉取 siyuan 源码
 
-### 阶段三：资源文件准备工作流
-- [x] 7. 设计前端资源构建流程 **Done**
-  - pnpm install安装依赖
-  - pnpm run build:app和build:mobile构建资源
-- [x] 8. 编写资源文件收集和app.zip打包脚本 **Done**
-  - 收集appearance、guide、stage、changelogs目录
-  - 打包为app.zip并复制到assets目录
-- [x] 9. 确保app.zip包含正确目录结构 **Done**
+### 5. 问题根源确认 - Done
+- [x] 确认主要问题：`TransMux/siyuan` 仓库不存在
+- [x] 检查官方仓库状态：`siyuan-note/siyuan` 仓库正常运行
+- **结果**: 问题根源已确定 - fork 仓库不存在导致构建失败
 
-### 阶段四：Android构建配置
-- [x] 10. 配置Java/Android SDK环境 **Done**
-  - JDK 17配置
-  - Android SDK和NDK安装
-- [x] 11. 配置Gradle构建缓存优化 **Done**
-- [x] 12. 准备debug构建配置 **Done**
-
-### 阶段五：Debug包构建实现
-- [x] 13. 实现cn渠道debug APK构建（assembleCnDebug） **Done**
-- [x] 14. 实现official渠道debug APK构建（assembleOfficialDebug） **Done**
-- [x] 15. 配置debug构建的命名规则 **Done**
-
-### 阶段六：构建产物管理
-- [x] 16. 配置构建产物收集和重命名 **Done**
-- [x] 17. 实现构建产物上传到GitHub Artifacts **Done**
-- [x] 18. 配置构建失败通知机制 **Done**
-
-### 阶段七：工作流优化和测试
-- [x] 19. 优化构建时间（并行构建、缓存策略） **Done**
-- [x] 20. 添加构建状态检查和错误处理 **Done**
-- [x] 21. 编写完整的GitHub Actions workflow文件 **Done**
-- [x] 22. 测试验证整个构建流程 **Done**
-
-## 技术要点
-
-### 依赖工具版本
-- Go: 最新版本（需要CGO_ENABLED=1）
-- Node.js: 支持pnpm的版本
-- Java: JDK 11或17
-- Android SDK: API 36
-- Gradle: 项目中指定的版本
-
-### 关键文件路径
-- 内核源码：`/siyuan/kernel/`
-- 内核构建产物：`kernel.aar` -> `siyuan-android/app/libs/`
-- 资源文件：从`/siyuan/app/`构建 -> `siyuan-android/app/src/main/assets/app.zip`
-- Debug构建产物：`siyuan-android/app/build/outputs/apk/*/debug/`
-
-### 构建任务
-- Debug APK构建：`assembleCnDebug`, `assembleOfficialDebug`
-- 无需签名配置（debug版本使用默认debug签名）
-
-## 预期产物
-- GitHub Actions workflow文件：`.github/workflows/build-apk.yml`
-- 自动构建的debug APK文件上传到GitHub Artifacts
-- 支持手动触发和推送触发的构建
-
-## 实施总结
-
-### 已完成工作
-
-1. **创建了完整的GitHub Actions工作流** `.github/workflows/build-apk.yml`
-   - 支持推送到main/dev分支和手动触发
-   - 包含完整的环境配置和构建流程
-
-2. **工作流主要步骤**：
-   - 检出siyuan-android和siyuan仓库
-   - 配置Go 1.24、Node.js 18、pnpm 10.13.1、JDK 17环境
-   - 安装Android SDK/NDK和gomobile工具
-   - 构建前端资源（app和mobile）
-   - 打包app.zip资源文件
-   - 编译kernel.aar（Android ARM64）
-   - 准备Android项目依赖
-   - 构建cn和official渠道的debug APK
-   - 上传APK到GitHub Artifacts
-
-3. **关键特性**：
-   - **无需签名**：使用Android默认debug签名
-   - **多渠道支持**：cn（中国版）和official（官方版）
-   - **完整依赖**：自动处理思源内核和前端资源
-   - **Artifacts上传**：APK保留30天供下载
-
-### 使用说明
-
-1. **触发构建**：
-   - 推送代码到main或dev分支
-   - 创建Pull Request到main分支  
-   - 在GitHub Actions页面手动触发
-
-2. **获取APK**：
-   - 构建完成后在Actions页面下载artifacts
-   - 包含cn和official两个渠道的debug版本
-
-3. **预期构建时间**：约15-25分钟（取决于网络和缓存）
-
-### 注意事项
-
-- 首次运行可能需要更长时间下载依赖
-- 需要确保siyuan仓库可访问
-- APK为debug版本，适用于开发测试
-- 如需release版本，需要额外配置签名
+## 下一步行动
+1. 首先检查关键的构建和配置文件
+2. 对比官方仓库和 fork 仓库的关键差异
+3. 分析构建日志（如果有的话）
+4. 提供具体的修复建议

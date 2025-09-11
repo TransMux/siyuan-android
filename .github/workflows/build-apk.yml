@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build SiYuan Official Release APK
 
 on:
   push:
@@ -97,18 +97,14 @@ jobs:
     - name: Make gradlew executable
       run: chmod +x ./gradlew
       
-    - name: Build APKs
+    - name: Build official release APK
       run: |
-        # Build both debug and release versions
-        ./gradlew assembleCnDebug assembleOfficialDebug assembleCnRelease assembleOfficialRelease
+        # Build only official release version
+        ./gradlew assembleOfficialRelease
         
-    - name: Upload APK artifacts
+    - name: Upload official release APK
       uses: actions/upload-artifact@v4
       with:
-        name: siyuan-apks
-        path: |
-          app/build/outputs/apk/cn/debug/*.apk
-          app/build/outputs/apk/official/debug/*.apk
-          app/build/outputs/apk/cn/release/*.apk
-          app/build/outputs/apk/official/release/*.apk
-        retention-days: 7
+        name: siyuan-official-release
+        path: app/build/outputs/apk/official/release/*.apk
+        retention-days: 30
