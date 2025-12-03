@@ -25,9 +25,15 @@ import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.net.Uri;
 import android.os.LocaleList;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintManager;
 import android.text.TextUtils;
 import android.util.Log;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.Toast;
 
 import androidx.annotation.StringRes;
@@ -63,7 +69,7 @@ import mobile.Mobile;
  *
  * @author <a href="https://88250.b3log.org">Liang Ding</a>
  * @author <a href="https://github.com/wwxiaoqi">Jane Haring</a>
- * @version 1.4.0.5, Jun 15, 2025
+ * @version 1.5.0.0, Oct 19, 2025
  * @since 1.0.0
  */
 public final class Utils {
@@ -77,6 +83,39 @@ public final class Utils {
      * App version code.
      */
     public static final int versionCode = BuildConfig.VERSION_CODE;
+
+    public static void print(final String htmlContent, final String filename, Context context) {
+        ((Activity) context).runOnUiThread(() -> {
+            final WebView webView = new WebView(context);
+            final WebSettings ws = webView.getSettings();
+            ws.setJavaScriptEnabled(true);
+            ws.setDomStorageEnabled(true);
+            ws.setCacheMode(WebSettings.LOAD_NO_CACHE);
+            ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+            ws.setTextZoom(100);
+            ws.setUseWideViewPort(true);
+            ws.setLoadWithOverviewMode(true);
+            webView.setWebViewClient(new WebViewClient() {
+
+                @Override
+                public void onPageFinished(WebView view, String url) {
+                    final PrintManager printManager = (PrintManager) context.getSystemService(Context.PRINT_SERVICE);
+                    final PrintDocumentAdapter printAdapter = view.createPrintDocumentAdapter(filename);
+                    printManager.print(filename, printAdapter, null);
+                }
+
+                @Override
+                public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                    super.onReceivedError(view, request, error);
+                    if (request.isForMainFrame()) {
+                        Utils.logError("pdf", "Failed to print document: " + error.getDescription());
+                    }
+                }
+            });
+
+            webView.loadDataWithBaseURL("http://127.0.0.1:6806/", htmlContent, "text/HTML", "UTF-8", null);
+        });
+    }
 
     private static Toast currentToast;
 
@@ -154,7 +193,8 @@ public final class Utils {
             }
 
             if (KeyboardUtils.isSoftInputVisible(activity)) {
-                webView.evaluateJavascript("javascript:showKeyboardToolbar()", null);
+                final int h = height / 2 - 42;
+                webView.evaluateJavascript("javascript:showKeyboardToolbar(" + h + ")", null);
                 lastShowKeyboard = now;
                 //Utils.logInfo("keyboard", "Show keyboard toolbar");
             } else {

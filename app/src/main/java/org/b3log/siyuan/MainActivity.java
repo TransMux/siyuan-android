@@ -30,7 +30,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.LocaleList;
 import android.os.Looper;
 import android.os.Message;
 import android.provider.MediaStore;
@@ -44,6 +43,7 @@ import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -51,6 +51,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.window.OnBackInvokedDispatcher;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -76,12 +77,13 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.InputStream;
 import java.lang.reflect.Field;
+import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
 
@@ -91,7 +93,7 @@ import mobile.Mobile;
  * 主程序.
  *
  * @author <a href="https://88250.b3log.org">Liang Ding</a>
- * @version 1.1.1.10, Sep 4, 2025
+ * @version 1.1.1.13, Nov 20, 2025
  * @since 1.0.0
  */
 public class MainActivity extends AppCompatActivity implements com.blankj.utilcode.util.Utils.OnAppStatusChangedListener {
@@ -131,6 +133,10 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             // Full screen display in landscape mode on Android https://github.com/siyuan-note/siyuan/issues/14448
             getWindow().getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::goBack);
         }
 
         // 启动 HTTP Server
@@ -235,6 +241,22 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
                     bootDetailsText.setVisibility(View.GONE);
                 });
             }
+
+            @Override
+            public WebResourceResponse shouldInterceptRequest(final WebView view, final WebResourceRequest request) {
+                final Map<String, String> headers = request.getRequestHeaders();
+
+                if (request.getUrl().toString().toLowerCase().contains("youtube")) {
+                    // YouTube 设置 Referer https://github.com/siyuan-note/siyuan/issues/16319
+                    headers.put("Referer", "https://b3log.org/siyuan/");
+                }
+
+                if (request.getUrl().toString().contains("qpic")) {
+                    // 改进公众号图片加载 https://github.com/siyuan-note/siyuan/issues/16326
+                    return handleRequest(request.getUrl().toString(), headers);
+                }
+                return super.shouldInterceptRequest(view, request);
+            }
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
@@ -305,12 +327,6 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
                         return true;
                     }
 
-                    final String[] permissions = {};
-                    if (ContextCompat.checkSelfPermission(MainActivity.this, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                        ActivityCompat.requestPermissions(MainActivity.this, permissions, REQUEST_CAMERA);
-                        return true;
-                    }
-
                     openCamera();
                     return true;
                 }
@@ -349,7 +365,9 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
         waitFotKernelHttpServing();
         webView.loadUrl("http://127.0.0.1:6806/appearance/boot/index.html?v=" + Utils.version);
 
-        new Thread(this::keepLive).start();
+        keepLiveActive = true;
+        keepLiveThread = new Thread(this::keepLive, "KeepLiveThread");
+        keepLiveThread.start();
     }
 
     private Handler bootHandler = new Handler(Looper.getMainLooper()) {
@@ -470,6 +488,34 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
         bootIndex();
     }
 
+    private WebResourceResponse handleRequest(String urlString, Map<String, String> headers) {
+        try {
+            final URL url = new URL(urlString);
+            final HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                if ("referer".equalsIgnoreCase(entry.getKey())) {
+                    continue;
+                }
+                connection.setRequestProperty(entry.getKey(), entry.getValue());
+            }
+            connection.setRequestProperty("User-Agent", userAgent);
+
+            final String contentType = connection.getContentType();
+            final String mimeType = (contentType != null && contentType.contains(";")) ? contentType.split(";")[0] : contentType;
+            final String encoding = (contentType != null && contentType.contains("charset=")) ? contentType.split("charset=")[1] : "UTF-8";
+            final InputStream is = connection.getInputStream();
+            return new WebResourceResponse(mimeType, encoding, is);
+
+        } catch (final Exception e) {
+            Utils.logError("webview", "handle request failed for url [" + urlString + "]", e);
+            return null; // 返回空后 WebView 会尝试自己加载原始 URL
+        }
+    }
+
+    private volatile boolean keepLiveActive = true;
+    private Thread keepLiveThread;
+
     /**
      * 通知栏保活。
      */
@@ -481,7 +527,7 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
             }
         }
 
-        while (true) {
+        while (keepLiveActive) {
             try {
                 final Intent intent = new Intent(MainActivity.this, KeepLiveService.class);
                 ContextCompat.startForegroundService(this, intent);
@@ -566,6 +612,10 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
 
     @Override
     public void onBackPressed() {
+        goBack();
+    }
+
+    private void goBack() {
         webView.evaluateJavascript("javascript:window.goBack ? window.goBack() : window.history.back()", null);
     }
 
@@ -729,6 +779,12 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
         }
         if (null != server) {
             server.stop();
+        }
+
+        keepLiveActive = false;
+        if (keepLiveThread != null) {
+            keepLiveThread.interrupt();
+            keepLiveThread = null;
         }
     }
 
