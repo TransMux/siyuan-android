@@ -76,6 +76,14 @@ jobs:
         cd app_resources
         zip -r ../app.zip *
         
+    - name: Checkout dejavu repository
+      uses: actions/checkout@v4
+      with:
+        repository: transmux/dejavu
+        ref: mux/dev
+        path: dejavu
+        token: ${{ secrets.PAT_TOKEN }}
+
     - name: Build kernel.aar
       run: |
         cd siyuan/kernel
