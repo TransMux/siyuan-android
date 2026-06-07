@@ -17,21 +17,29 @@
  */
 package org.b3log.siyuan;
 
+import android.app.PendingIntent;
 import android.content.ClipData;
 import android.content.Intent;
+import android.content.pm.ShortcutInfo;
+import android.content.pm.ShortcutManager;
+import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.Log;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.TextView;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.ContentInfoCompat;
+import androidx.core.view.ViewCompat;
 
 import com.blankj.utilcode.util.BarUtils;
 import com.blankj.utilcode.util.KeyboardUtils;
@@ -47,15 +55,17 @@ import java.util.List;
 import mobile.Mobile;
 
 /**
- * 追加到日记的快捷方式.
+ * 闪念速记.
  *
  * @author <a href="https://88250.b3log.org">Liang Ding</a>
- * @version 1.0.0.1, Sep 4, 2025
- * @since 3.1.26
+ * @version 1.0.0.2, May 9, 2026
+ * @since 3.7.0
  */
 public class ShortcutActivity extends AppCompatActivity {
 
     private static final int REQUEST_SELECT_FILE = 100;
+
+    private boolean inputSetupDone = false;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -63,6 +73,23 @@ public class ShortcutActivity extends AppCompatActivity {
         setContentView(R.layout.activity_shortcut);
 
         final EditText input = findViewById(R.id.full_screen_input);
+        ViewCompat.setOnReceiveContentListener(input, new String[]{"text/html"}, (view, contentInfo) -> {
+            final ClipData clip = contentInfo.getClip();
+            if (null != clip && 0 < clip.getItemCount()) {
+                final ClipData.Item item = clip.getItemAt(0);
+                final String html = item.getHtmlText();
+                if (null != html && !html.isEmpty()) {
+                    final String md = Mobile.htmL2Markdown(html);
+                    if (null != md && !md.isEmpty()) {
+                        final ClipData newClip = ClipData.newPlainText("", md);
+                        return new ContentInfoCompat.Builder(contentInfo)
+                                .setClip(newClip)
+                                .build();
+                    }
+                }
+            }
+            return null;
+        });
         UltimateBarX.statusBarOnly(this).transparent().apply();
         BarUtils.setNavBarVisibility(this, false);
         ((ViewGroup) input.getParent()).setPadding(0, UltimateBarX.getStatusBarHeight(), 0, 0);
@@ -83,28 +110,7 @@ public class ShortcutActivity extends AppCompatActivity {
     }
 
     private void handleIntent(final Intent intent) {
-        setupFullScreenInput();
-
-        if (Intent.ACTION_MAIN.equals(intent.getAction())) { // 来自桌面快捷方式
-            final EditText input = findViewById(R.id.full_screen_input);
-            input.postDelayed(() -> {
-                input.requestFocus();
-                KeyboardUtils.showSoftInput(input);
-            }, 500);
-            return;
-        } else if (Intent.ACTION_VIEW.equals(intent.getAction())) { // 来自菜单快捷方式
-            final String data = intent.getDataString();
-            if (StringUtils.equals(data, "shorthand")) {
-                final EditText input = findViewById(R.id.full_screen_input);
-                input.postDelayed(() -> {
-                    input.requestFocus();
-                    KeyboardUtils.showSoftInput(input);
-                }, 500);
-                return;
-            }
-
-            Log.w("shortcut", "Unknown data [" + data + "]");
-        } else if (Intent.ACTION_SEND.equals(intent.getAction())) { // 来自其他应用分享/发送到
+        if (Intent.ACTION_SEND.equals(intent.getAction())) { // 来自其他应用分享
             final String type = intent.getType();
             if (type == null) {
                 Log.w("shortcut", "Unknown type [null]");
@@ -112,35 +118,53 @@ public class ShortcutActivity extends AppCompatActivity {
             }
 
             if ("text/plain".equals(type)) {
+                setupFullScreenInput();
                 final String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
                 if (sharedText != null) {
                     final EditText input = findViewById(R.id.full_screen_input);
                     input.append(sharedText);
                     input.setSelection(sharedText.length());
                 }
+                return;
             } else {
-                // 支持所有文件类型：image/*, video/*, audio/*, application/*, 以及其他类型
+                setupFullScreenInput();
                 final Uri assetUri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
                 if (assetUri != null) {
                     final List<Uri> assets = List.of(assetUri);
                     writeAssets(assets, type);
-                    return;
                 }
+                return;
             }
+
         } else if (Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction())) {
-            // 支持多个文件发送到
             final String type = intent.getType();
             if (type == null) {
                 Log.w("shortcut", "Unknown type [null]");
                 return;
             }
 
-            final List<Uri> uris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
-            if (uris != null && !uris.isEmpty()) {
-                writeAssets(uris, type);
-                return;
+            setupFullScreenInput();
+            final List<Uri> assetUris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (null != assetUris) {
+                writeAssets(assetUris, type);
+            }
+            return;
+        }
+
+        // 来自桌面快捷方式或菜单快捷方式 — 显示文本输入界面
+        setupFullScreenInput();
+        if (Intent.ACTION_VIEW.equals(intent.getAction())) {
+            final String data = intent.getDataString();
+            if (!StringUtils.equals(data, "shorthand")) {
+                Log.w("shortcut", "Unknown data [" + data + "]");
             }
         }
+
+        final EditText input = findViewById(R.id.full_screen_input);
+        input.postDelayed(() -> {
+            input.requestFocus();
+            KeyboardUtils.showSoftInput(input);
+        }, 500);
     }
 
     private void writeAssets(final List<Uri> assetUris, final String type) {
@@ -152,26 +176,24 @@ public class ShortcutActivity extends AppCompatActivity {
         input.requestFocus();
         final String shorthandsDir = getShorthandsDir();
         final File assetsDir = new File(shorthandsDir, "assets");
-        assetsDir.mkdirs(); // 确保assets文件夹存在
-        
+        assetsDir.mkdirs();
         for (final Uri uri : assetUris) {
             final String p = uri.getLastPathSegment();
+            if (null == p) {
+                continue;
+            }
             String baseName = Mobile.filepathBase(p);
             baseName = Mobile.filterUploadFileName(baseName);
             final String fileName = Mobile.assetName(baseName);
             final File f = new File(assetsDir, fileName);
             try {
                 FileUtils.copyInputStreamToFile(getContentResolver().openInputStream(uri), f);
-                String content = "";
-                if (type != null && type.startsWith("image/")) {
-                    // 图片使用Markdown图片语法
-                    content = "![" + baseName + "](assets/" + fileName + ")";
+                if (null != type && type.startsWith("image/")) {
+                    input.append("![" + baseName + "](assets/" + fileName + ")");
                 } else {
-                    // 其他文件使用Markdown链接语法
-                    content = "[" + baseName + "](assets/" + fileName + ")";
+                    input.append("[" + baseName + "](assets/" + fileName + ")");
                 }
-                content += "\n\n";
-                input.append(content);
+                input.append("\n\n");
                 input.setSelection(input.getText().length());
             } catch (final Exception e) {
                 Utils.logError("shortcut", "copy file failed", e);
@@ -181,6 +203,12 @@ public class ShortcutActivity extends AppCompatActivity {
     }
 
     private void setupFullScreenInput() {
+        if (inputSetupDone) {
+            return;
+        }
+        inputSetupDone = true;
+
+        initAddToHomeButton();
         initUploadFileButton();
 
         final EditText input = findViewById(R.id.full_screen_input);
@@ -215,6 +243,7 @@ public class ShortcutActivity extends AppCompatActivity {
             } catch (final Exception e) {
                 Utils.logError("shortcut", "Write file failed", e);
                 Utils.showToast(this, "Failed to write to file [" + e.getMessage() + "]");
+                return;
             }
 
             finish();
@@ -222,7 +251,7 @@ public class ShortcutActivity extends AppCompatActivity {
     }
 
     private void initUploadFileButton() {
-        final Button uploadFileButton = findViewById(R.id.add_to_home_button);
+        final TextView uploadFileButton = findViewById(R.id.upload_file_button);
         uploadFileButton.setOnClickListener(v -> openFileChooser());
     }
 
@@ -232,42 +261,100 @@ public class ShortcutActivity extends AppCompatActivity {
         intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         try {
-            startActivityForResult(Intent.createChooser(intent, getString(R.string.add_to_home)), REQUEST_SELECT_FILE);
+            startActivityForResult(Intent.createChooser(intent, getString(R.string.upload_file)), REQUEST_SELECT_FILE);
         } catch (final Exception e) {
             Utils.logError("shortcut", "Cannot open file chooser", e);
-            Utils.showToast(this, "无法打开文件选择器");
+            Utils.showToast(this, "Cannot open file chooser");
         }
     }
 
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
+    protected void onActivityResult(final int requestCode, final int resultCode, final Intent intent) {
         super.onActivityResult(requestCode, resultCode, intent);
-        
-        if (requestCode == REQUEST_SELECT_FILE && resultCode == RESULT_OK && intent != null) {
-            ClipData clipData = intent.getClipData();
-            String stringData = intent.getDataString();
-            
-            List<Uri> uris = new ArrayList<>();
-            
-            if (clipData != null) {
-                for (int i = 0; i < clipData.getItemCount(); i++) {
-                    uris.add(clipData.getItemAt(i).getUri());
-                }
-            } else if (stringData != null) {
-                uris.add(Uri.parse(stringData));
+
+        if (requestCode != REQUEST_SELECT_FILE || resultCode != RESULT_OK || null == intent) {
+            return;
+        }
+
+        final List<Uri> uris = new ArrayList<>();
+        final ClipData clipData = intent.getClipData();
+        if (null != clipData) {
+            for (int i = 0; i < clipData.getItemCount(); i++) {
+                uris.add(clipData.getItemAt(i).getUri());
             }
-            
-            if (!uris.isEmpty()) {
-                // 为每个文件单独处理，因为可能有不同的MIME类型
-                for (Uri uri : uris) {
-                    String mimeType = getContentResolver().getType(uri);
-                    if (mimeType == null) {
-                        mimeType = "application/octet-stream";
-                    }
-                    writeAssets(List.of(uri), mimeType);
-                }
+        } else if (null != intent.getData()) {
+            uris.add(intent.getData());
+        }
+
+        for (final Uri uri : uris) {
+            String mimeType = getContentResolver().getType(uri);
+            if (StringUtils.isEmpty(mimeType)) {
+                mimeType = "application/octet-stream";
+            }
+            writeAssets(List.of(uri), mimeType);
+        }
+    }
+
+    private void addShortcutToHome() {
+        final ShortcutManager shortcutManager = getSystemService(ShortcutManager.class);
+        if (!shortcutManager.isRequestPinShortcutSupported()) {
+            Utils.showToast(this, R.string.add_to_home_failed);
+            Utils.logError("shortcut", "Request pin shortcut not supported");
+            return;
+        }
+
+        final Intent shortcutIntent = new Intent(getApplicationContext(), ShortcutActivity.class);
+        shortcutIntent.setAction(Intent.ACTION_MAIN);
+        final ShortcutInfo shortcutInfo = new ShortcutInfo.Builder(this, "shortcut_shorthand")
+                .setShortLabel(getString(R.string.shortcut_shorthand))
+                .setLongLabel(getString(R.string.shortcut_shorthand))
+                .setIcon(Icon.createWithResource(this, R.drawable.shorthand_icon))
+                .setIntent(shortcutIntent)
+                .build();
+        final Intent pinnedShortcutCallbackIntent = shortcutManager.createShortcutResultIntent(shortcutInfo);
+        final PendingIntent successCallback = PendingIntent.getBroadcast(this, 0,
+                pinnedShortcutCallbackIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        shortcutManager.requestPinShortcut(shortcutInfo, successCallback.getIntentSender());
+        Utils.showToast(this, R.string.adding_to_home);
+
+        new Thread(() -> {
+            try {
+                Thread.sleep(1000);
+            } catch (final Exception e) {
+                Log.e("shortcut", "Failed to sleep", e);
+            }
+
+            if (isShortcutExists("shortcut_shorthand")) {
+                runOnUiThread(() -> {
+                    findViewById(R.id.add_to_home_button).setVisibility(View.GONE);
+                    Utils.showToast(this, R.string.add_to_home_success);
+                });
+                return;
+            }
+
+            runOnUiThread(() -> {
+                Utils.showToast(this, R.string.add_to_home_failed);
+            });
+        }).start();
+    }
+
+    private void initAddToHomeButton() {
+        final TextView addToHomeButton = findViewById(R.id.add_to_home_button);
+        if (isShortcutExists("shortcut_shorthand")) {
+            addToHomeButton.setVisibility(View.GONE);
+        } else {
+            addToHomeButton.setOnClickListener(v -> addShortcutToHome());
+        }
+    }
+
+    private boolean isShortcutExists(final String shortcutId) {
+        final ShortcutManager shortcutManager = getSystemService(ShortcutManager.class);
+        for (ShortcutInfo shortcut : shortcutManager.getPinnedShortcuts()) {
+            if (shortcutId.equals(shortcut.getId())) {
+                return true;
             }
         }
+        return false;
     }
 
     private String getShorthandsDir() {

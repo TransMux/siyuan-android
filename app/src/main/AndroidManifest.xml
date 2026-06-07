@@ -8,6 +8,12 @@
     <!-- 运行前台服务 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
+    <!-- Keep CPU alive for background kernel service -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Keep Wi-Fi alive for background kernel service -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
     <!--
         Fix the problem that notifications cannot be allowed on Android 13
         https://github.com/siyuan-note/siyuan/issues/7960
@@ -31,15 +37,19 @@
     <!-- 添加桌面快捷方式 -->
     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
 
+    <!-- 预约通知 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
     <application
         android:name=".App"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:localeConfig="@xml/locales_config"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.SiYuan"
         android:usesCleartextTraffic="true"
-        android:enableOnBackInvokedCallback="true"
         tools:targetApi="tiramisu">
 
         <activity
@@ -60,18 +70,32 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
 
-                <data android:scheme="siyuan" />
-            </intent-filter>
-
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
+                <data
+                    android:host="blocks"
+                    android:scheme="siyuan" />
             </intent-filter>
 
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
+        </activity>
+
+        <activity
+            android:name=".RedirectUriReceiverActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.SiYuan.Transparent">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="oidc-callback"
+                    android:scheme="siyuan" />
+            </intent-filter>
         </activity>
 
         <activity
@@ -94,8 +118,15 @@
         <activity
             android:name=".ShortcutActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
-            android:windowSoftInputMode="adjustPan">
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="shorthand" />
+            </intent-filter>
+
             <intent-filter android:label="@string/shortcut_shorthand">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -146,18 +177,6 @@
                 <data android:mimeType="application/*" />
             </intent-filter>
 
-            <!-- 支持所有其他文件类型 -->
-            <intent-filter android:label="@string/shortcut_shorthand">
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-            <intent-filter android:label="@string/shortcut_shorthand">
-                <action android:name="android.intent.action.SEND_MULTIPLE" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-
         </activity>
 
         <service
@@ -167,6 +186,18 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="hosting" />
         </service>
+
+        <service
+            android:name=".KernelService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="hosting" />
+        </service>
+
+        <!-- 监听系统广播以实现预约通知 -->
+        <receiver android:name=".NotificationReceiver" />
 
         <!--
             Support opening assets through other apps on the Android

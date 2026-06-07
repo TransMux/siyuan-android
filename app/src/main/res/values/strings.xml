@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="shortcut_shorthand">Flash shorthand</string>
-    <string name="enter_your_text">Please enter the text, submit it, then open SiYuan, click the lightning button next to the notebook, and the shorthands will create a new doc named after the time</string>
+    <string name="enter_your_text">Enter text and submit. Content will be saved to Settings - Document - Default shorthand save path</string>
     <string name="submit">Submit</string>
-    <string name="add_to_home">Upload File</string>
+    <string name="add_to_home">Add to home</string>
+    <string name="upload_file">Upload File</string>
     <string name="add_to_home_success">Added to home successfully</string>
     <string name="add_to_home_failed">Failed to add shortcut to home, please make sure you have granted the necessary permissions</string>
     <string name="paste">Paste</string>
