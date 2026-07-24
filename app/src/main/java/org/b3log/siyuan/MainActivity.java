@@ -25,8 +25,10 @@ import android.content.ClipData;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.hardware.input.InputManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -36,6 +38,7 @@ import android.os.Message;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.view.DragEvent;
+import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -55,6 +58,10 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.window.OnBackInvokedDispatcher;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.PickVisualMediaRequest;
+import androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia;
+import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -87,6 +94,7 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.TimeZone;
 
@@ -96,20 +104,29 @@ import mobile.Mobile;
  * 主程序.
  *
  * @author <a href="https://88250.b3log.org">Liang Ding</a>
- * @version 1.2.0.1, Jun 28, 2026
+ * @version 1.2.0.3, Jul 20, 2026
  * @since 1.0.0
  */
-public class MainActivity extends AppCompatActivity implements com.blankj.utilcode.util.Utils.OnAppStatusChangedListener {
+public class MainActivity extends AppCompatActivity implements com.blankj.utilcode.util.Utils.OnAppStatusChangedListener,
+        InputManager.InputDeviceListener {
 
     private AsyncHttpServer server;
     WebView webView;
     private ImageView bootLogo;
     private ProgressBar bootProgressBar;
     private TextView bootDetailsText;
+    private InputManager inputManager;
+    private final Map<Integer, String> inputDeviceDetails = new HashMap<>();
 
     private ValueCallback<Uri[]> uploadMessage;
     private static final int REQUEST_SELECT_FILE = 100;
     private static final int REQUEST_CAMERA = 101;
+    private static final String SIYUAN_IMAGE_PICKER_ACCEPT_TYPE = "application/x-siyuan-image-picker";
+    private final ActivityResultLauncher<PickVisualMediaRequest> selectImageLauncher = registerForActivityResult(
+            new PickVisualMedia(), uri -> completeFileSelection(null == uri ? null : new Uri[]{uri}));
+    private final ActivityResultLauncher<PickVisualMediaRequest> selectImagesLauncher = registerForActivityResult(
+            new PickMultipleVisualMedia(), uris -> completeFileSelection(
+                    uris.isEmpty() ? null : uris.toArray(new Uri[0])));
 
     static int serverPort = 6906;
     static String webViewVer;
@@ -119,6 +136,8 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
     public void onNewIntent(final Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        Utils.logInfo("boot", "Receive main activity intent, process [" + android.os.Process.myPid()
+                + "], instance [" + System.identityHashCode(this) + "], task [" + getTaskId() + "]");
 
         if (null == intent || null == webView) {
             return;
@@ -142,11 +161,38 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
     }
 
     @Override
-    protected void onCreate(final Bundle savedInstanceState) {
-        Log.i("boot", "Create main activity");
+    public void onConfigurationChanged(final Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        Utils.logInfo("boot", "Change main activity configuration, process [" + android.os.Process.myPid()
+                + "], instance [" + System.identityHashCode(this) + "], task [" + getTaskId()
+                + "], configuration [" + Utils.formatInputConfiguration(newConfig) + "]");
+    }
 
+    @Override
+    public void onInputDeviceAdded(final int deviceId) {
+        logInputDevice("Add", deviceId);
+    }
+
+    @Override
+    public void onInputDeviceChanged(final int deviceId) {
+        logInputDevice("Change", deviceId);
+    }
+
+    @Override
+    public void onInputDeviceRemoved(final int deviceId) {
+        final String details = inputDeviceDetails.remove(deviceId);
+        Utils.logInfo("input", "Remove input device, id [" + deviceId + "], details ["
+                + (null == details ? "unavailable" : details) + "]");
+    }
+
+    @Override
+    protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Utils.logInfo("boot", "Create main activity, process [" + android.os.Process.myPid()
+                + "], instance [" + System.identityHashCode(this) + "], task [" + getTaskId()
+                + "], saved state [" + (null != savedInstanceState) + "]");
         setContentView(R.layout.activity_main);
+        registerInputDeviceListener();
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             // Full screen display in landscape mode on Android https://github.com/siyuan-note/siyuan/issues/14448
@@ -196,15 +242,40 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
         AndroidBug5497Workaround.assistActivity(this);
     }
 
+    private void registerInputDeviceListener() {
+        inputManager = (InputManager) getSystemService(INPUT_SERVICE);
+        if (null == inputManager) {
+            Utils.logInfo("input", "Input manager is unavailable");
+            return;
+        }
+
+        inputManager.registerInputDeviceListener(this, null);
+    }
+
+    private void logInputDevice(final String action, final int deviceId) {
+        if (null == inputManager) {
+            return;
+        }
+
+        final InputDevice device = inputManager.getInputDevice(deviceId);
+        if (null == device) {
+            Utils.logInfo("input", action + " input device, id [" + deviceId + "], details [unavailable]");
+            return;
+        }
+
+        final String details = "sources [0x" + Integer.toHexString(device.getSources()) + "], keyboard type ["
+                + device.getKeyboardType() + "], external [" + device.isExternal() + "], virtual ["
+                + device.isVirtual() + "]";
+        inputDeviceDetails.put(deviceId, details);
+        Utils.logInfo("input", action + " input device, id [" + deviceId + "], details [" + details + "]");
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     private void initUIElements() {
         bootLogo = findViewById(R.id.bootLogo);
         bootProgressBar = findViewById(R.id.progressBar);
         bootDetailsText = findViewById(R.id.bootDetails);
         webView = findViewById(R.id.webView);
-        if (!Utils.isTablet(this)) {
-            Utils.setWebViewFocusable(webView, false);
-        }
 
         webView.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
             final Uri uri = Uri.parse(url);
@@ -351,6 +422,22 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
 
                     openCamera();
                     return true;
+                }
+
+                if (requestsSiyuanImagePicker(fileChooserParams.getAcceptTypes())) {
+                    try {
+                        final PickVisualMediaRequest request = new PickVisualMediaRequest.Builder()
+                                .setMediaType(PickVisualMedia.ImageOnly.INSTANCE)
+                                .build();
+                        if (fileChooserParams.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) {
+                            selectImagesLauncher.launch(request);
+                        } else {
+                            selectImageLauncher.launch(request);
+                        }
+                        return true;
+                    } catch (final Exception e) {
+                        Utils.logError("file chooser", "open photo picker failed", e);
+                    }
                 }
 
                 final Intent intent = fileChooserParams.createIntent();
@@ -700,8 +787,50 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
         }
     }
 
+    private static boolean requestsSiyuanImagePicker(final String[] acceptTypes) {
+        if (null == acceptTypes || 0 == acceptTypes.length) {
+            return false;
+        }
+
+        boolean acceptsImages = false;
+        boolean requestsImagePicker = false;
+        for (final String acceptTypeGroup : acceptTypes) {
+            if (null == acceptTypeGroup) {
+                continue;
+            }
+            for (final String acceptType : acceptTypeGroup.split(",")) {
+                final String normalizedType = acceptType.trim();
+                if (normalizedType.isEmpty()) {
+                    continue;
+                }
+                if ("image/*".equalsIgnoreCase(normalizedType)) {
+                    acceptsImages = true;
+                } else if (SIYUAN_IMAGE_PICKER_ACCEPT_TYPE.equalsIgnoreCase(normalizedType)) {
+                    requestsImagePicker = true;
+                } else {
+                    return false;
+                }
+            }
+        }
+        return acceptsImages && requestsImagePicker;
+    }
+
+    private void completeFileSelection(final Uri[] uris) {
+        if (null == uploadMessage) {
+            return;
+        }
+        final ValueCallback<Uri[]> callback = uploadMessage;
+        uploadMessage = null;
+        callback.onReceiveValue(uris);
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
+        if (REQUEST_CAMERA != requestCode && REQUEST_SELECT_FILE != requestCode) {
+            super.onActivityResult(requestCode, resultCode, intent);
+            return;
+        }
+
         if (null == uploadMessage) {
             super.onActivityResult(requestCode, resultCode, intent);
             return;
@@ -791,7 +920,11 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
 
     @Override
     protected void onDestroy() {
-        Log.i("boot", "Destroy main activity");
+        Utils.logInfo("boot", "Destroy main activity, process [" + android.os.Process.myPid()
+                + "], instance [" + System.identityHashCode(this) + "], task [" + getTaskId()
+                + "], finishing [" + isFinishing() + "], task root [" + isTaskRoot()
+                + "], changing configurations [" + isChangingConfigurations() + "], changes [0x"
+                + Integer.toHexString(getChangingConfigurations()) + "]");
         super.onDestroy();
         exit();
     }
@@ -826,6 +959,8 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
     }
 
     public void exit() {
+        Utils.logInfo("runtime", "Exit main activity, process [" + android.os.Process.myPid()
+                + "], instance [" + System.identityHashCode(this) + "], task [" + getTaskId() + "]");
         release();
 
         finishAffinity();
@@ -839,6 +974,15 @@ public class MainActivity extends AppCompatActivity implements com.blankj.utilco
     }
 
     private void release() {
+        try {
+            if (null != inputManager) {
+                inputManager.unregisterInputDeviceListener(this);
+                inputManager = null;
+            }
+        } catch (final Exception e) {
+            Utils.logError("runtime", "unregister input device listener failed", e);
+        }
+
         try {
             KeyboardUtils.unregisterSoftInputChangedListener(getWindow());
         } catch (final Exception e) {
