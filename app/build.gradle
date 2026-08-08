@@ -89,6 +89,16 @@ android {
 
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+        e2e {
+            initWith debug
+
+            applicationIdSuffix ".e2e"
+
+            resValue "string", "app_name", "SiYuan-E2E"
+            resValue "string", "app_package_name", "org.b3log.siyuan.e2e"
+
+            matchingFallbacks = ['debug']
+        }
     }
 
     repositories {
